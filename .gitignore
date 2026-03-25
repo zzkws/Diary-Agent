@@ -1,0 +1,13 @@
+.next/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+backend/data/*.db
+backend/exports/markdown/
+backend/exports/daily_entries.csv
+backend/test_artifacts/
+.env
