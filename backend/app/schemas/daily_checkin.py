@@ -59,3 +59,18 @@ class DailyLogRead(SQLModel):
     markdown_path: str | None
     created_at: datetime
     entries: list[SavedEntryRead]
+
+
+class DailyLogSummary(SQLModel):
+    id: int
+    log_date: date
+    extra_note: str | None
+    markdown_path: str | None
+    created_at: datetime
+    entry_count: int
+
+
+class ExportMetaRead(SQLModel):
+    export_root: str
+    markdown_root: str
+    csv_path: str

@@ -50,6 +50,21 @@ export type DailyLog = {
   entries: SavedEntry[];
 };
 
+export type DailyLogSummary = {
+  id: number;
+  log_date: string;
+  extra_note: string | null;
+  markdown_path: string | null;
+  created_at: string;
+  entry_count: number;
+};
+
+export type ExportMeta = {
+  export_root: string;
+  markdown_root: string;
+  csv_path: string;
+};
+
 export type TrackedItemPayload = {
   name: string;
   question: string;

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from ..core.db import get_session
+from ..core.config import settings
 from ..models.daily_log import DailyLog
 from ..models.item_entry import EntryStatus, ItemEntry
 from ..models.tracked_item import TrackedItem
@@ -13,7 +14,9 @@ from ..schemas.daily_checkin import (
     DailyCheckInCompleteRequest,
     DailyCheckInStartRequest,
     DailyCheckInStartResponse,
+    DailyLogSummary,
     DailyLogRead,
+    ExportMetaRead,
     QuestionStep,
     SavedEntryRead,
 )
@@ -285,4 +288,43 @@ def get_daily_log(log_date: date, session: Session = Depends(get_session)) -> Da
             )
             for item_entry, tracked_item in entries
         ],
+    )
+
+
+@router.get("/daily-logs", response_model=list[DailyLogSummary])
+def list_daily_logs(
+    limit: int = Query(default=30, ge=1, le=365),
+    session: Session = Depends(get_session),
+) -> list[DailyLogSummary]:
+    daily_logs = list(
+        session.exec(
+            select(DailyLog).order_by(DailyLog.log_date.desc(), DailyLog.created_at.desc()).limit(limit)
+        )
+    )
+
+    summaries: list[DailyLogSummary] = []
+    for daily_log in daily_logs:
+        entry_count = len(
+            list(session.exec(select(ItemEntry.id).where(ItemEntry.daily_log_id == daily_log.id)))
+        )
+        summaries.append(
+            DailyLogSummary(
+                id=daily_log.id,
+                log_date=daily_log.log_date,
+                extra_note=daily_log.extra_note,
+                markdown_path=daily_log.markdown_path,
+                created_at=daily_log.created_at,
+                entry_count=entry_count,
+            )
+        )
+
+    return summaries
+
+
+@router.get("/exports/meta", response_model=ExportMetaRead)
+def get_export_meta() -> ExportMetaRead:
+    return ExportMetaRead(
+        export_root=str(settings.export_root.resolve()),
+        markdown_root=str(settings.markdown_root.resolve()),
+        csv_path=str(settings.csv_path.resolve()),
     )

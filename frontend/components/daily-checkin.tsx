@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { ExportFolderActions } from "@/components/export-folder-actions";
 import { answerCheckIn, completeCheckIn, startCheckIn } from "@/lib/api";
 import { getLocalDateString } from "@/lib/date";
 import { DailyLog, QuestionStep } from "@/lib/types";
@@ -19,18 +20,17 @@ export function DailyCheckInFlow() {
   const [error, setError] = useState<string | null>(null);
   const answerRef = useRef<HTMLTextAreaElement | null>(null);
   const extraNoteRef = useRef<HTMLTextAreaElement | null>(null);
+
   const progressPercent = useMemo(() => {
-    if (savedLog) {
+    if (savedLog || isComplete) {
       return 100;
     }
     if (step) {
       return Math.round(((step.index - 1) / step.total) * 100);
     }
-    if (isComplete) {
-      return 100;
-    }
     return 0;
   }, [isComplete, savedLog, step]);
+
   const finalTextPreview = step ? (answer.trim() === "" ? step.tracked_item.default_text_if_empty : answer.trim()) : "";
 
   useEffect(() => {
@@ -101,45 +101,67 @@ export function DailyCheckInFlow() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-      <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6">
-        <h2 className="text-xl font-semibold">Start check-in</h2>
-        <p className="mt-2 text-sm text-[var(--muted)]">
-          Diary will ask each active tracked item in sequence and store everything locally.
-        </p>
-        <label className="mt-5 grid gap-2">
-          <span className="text-sm font-medium">Log date</span>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(event) => setSelectedDate(event.target.value)}
-            className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => void handleStart()}
-          disabled={loading}
-          className="mt-5 rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
-        >
-          {loading && !sessionId ? "Starting..." : "Start check-in"}
-        </button>
-        {error ? <p className="mt-4 text-sm text-red-700">{error}</p> : null}
-      </section>
+    <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+      <aside className="grid gap-4 xl:sticky xl:top-6 xl:self-start">
+        <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
+          <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">Daily check-in</p>
+          <h2 className="mt-2 text-2xl font-semibold">{selectedDate}</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            Diary asks one active tracked item at a time and stores the finished record locally.
+          </p>
 
-      <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6">
+          <label className="mt-5 grid gap-2">
+            <span className="text-sm font-medium">Log date</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(event) => setSelectedDate(event.target.value)}
+              className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+            />
+          </label>
+
+          <div className="mt-5 overflow-hidden rounded-full bg-[#ead9c5]">
+            <div
+              className="h-2 rounded-full bg-[var(--accent)] transition-all"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+
+          <p className="mt-3 text-sm text-[var(--muted)]">
+            {savedLog
+              ? "This day has been saved."
+              : step
+                ? `Question ${step.index} of ${step.total}`
+                : sessionId && isComplete
+                  ? "Fixed items are done. The extra note is optional."
+                  : "Start when you are ready."}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => void handleStart()}
+            disabled={loading}
+            className="mt-5 w-full rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {loading && !sessionId ? "Starting..." : "Start check-in"}
+          </button>
+
+          {error ? (
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+        </section>
+
+        <ExportFolderActions />
+      </aside>
+
+      <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
         {!sessionId && !savedLog ? (
-          <div className="rounded-2xl border border-dashed border-[var(--border)] px-4 py-10 text-sm text-[var(--muted)]">
-            No active check-in yet.
+          <div className="rounded-3xl border border-dashed border-[var(--border)] px-5 py-12 text-sm text-[var(--muted)]">
+            No active check-in yet. Pick a date and start the fixed question sequence.
           </div>
         ) : null}
-
-        <div className="mb-6 overflow-hidden rounded-full bg-[#ead9c5]">
-          <div
-            className="h-2 rounded-full bg-[var(--accent)] transition-all"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
 
         {sessionId && step ? (
           <div>
@@ -158,7 +180,7 @@ export function DailyCheckInFlow() {
                   void handleAnswer();
                 }
               }}
-              className="mt-5 min-h-40 w-full rounded-3xl border border-[var(--border)] bg-white px-4 py-4"
+              className="mt-5 min-h-44 w-full rounded-3xl border border-[var(--border)] bg-white px-4 py-4"
               placeholder="Leave blank to use the default text."
             />
             <p className="mt-3 text-sm text-[var(--muted)]">
@@ -172,7 +194,7 @@ export function DailyCheckInFlow() {
               type="button"
               onClick={() => void handleAnswer()}
               disabled={loading}
-              className="mt-5 rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+              className="mt-5 w-full rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
             >
               {loading ? "Saving..." : "Save and continue"}
             </button>
@@ -202,7 +224,7 @@ export function DailyCheckInFlow() {
               type="button"
               onClick={() => void handleComplete()}
               disabled={loading}
-              className="mt-5 rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+              className="mt-5 w-full rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
             >
               {loading ? "Finalizing..." : "Complete and save"}
             </button>
@@ -210,7 +232,7 @@ export function DailyCheckInFlow() {
         ) : null}
 
         {savedLog ? (
-          <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
+          <div className="rounded-3xl border border-[var(--border)] bg-white p-5">
             <h2 className="text-xl font-semibold">Saved for {savedLog.log_date}</h2>
             <p className="mt-2 text-sm text-[var(--muted)]">Markdown and CSV exports have been updated locally.</p>
             <div className="mt-5 grid gap-3">
@@ -223,6 +245,10 @@ export function DailyCheckInFlow() {
                   <p className="mt-2 text-sm">{entry.final_text}</p>
                 </div>
               ))}
+            </div>
+            <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[#f7f0e4] px-4 py-4">
+              <p className="text-sm font-medium">Extra note</p>
+              <p className="mt-2 text-sm text-[var(--muted)]">{savedLog.extra_note || "-"}</p>
             </div>
           </div>
         ) : null}

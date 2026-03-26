@@ -2,6 +2,8 @@ import {
   DailyCheckInAnswerResponse,
   DailyCheckInStartResponse,
   DailyLog,
+  DailyLogSummary,
+  ExportMeta,
   TrackedItem,
   TrackedItemPayload,
 } from "@/lib/types";
@@ -19,8 +21,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed with status ${response.status}`);
+    const rawDetail = await response.text();
+    let parsedDetail: string | null = null;
+    try {
+      const parsed = JSON.parse(rawDetail) as { detail?: string };
+      parsedDetail = parsed.detail ?? null;
+    } catch {
+      parsedDetail = null;
+    }
+    throw new Error(parsedDetail || rawDetail || `Request failed with status ${response.status}`);
   }
 
   if (response.status === 204) {
@@ -84,4 +93,12 @@ export function completeCheckIn(sessionId: string, extraNote: string) {
 
 export function getDailyLog(logDate: string) {
   return request<DailyLog>(`/daily-logs/${logDate}`);
+}
+
+export function listDailyLogs(limit = 30) {
+  return request<DailyLogSummary[]>(`/daily-logs?limit=${limit}`);
+}
+
+export function getExportMeta() {
+  return request<ExportMeta>("/exports/meta");
 }
