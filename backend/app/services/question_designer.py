@@ -1,6 +1,10 @@
+import logging
+
 from ..models.agent_setting import AgentSetting
 from ..models.topic import Topic
 from .gemini_client import GeminiClientError, extract_text, generate_content, has_valid_llm_settings
+
+logger = logging.getLogger("diary.api")
 
 
 def design_topic_question(topic: Topic, revival: bool = False) -> str:
@@ -43,5 +47,6 @@ def design_topic_question_with_llm(topic: Topic, setting: AgentSetting | None, r
         )
         text = extract_text(payload).strip()
         return text or fallback
-    except GeminiClientError:
+    except GeminiClientError as exc:
+        logger.warning("gemini question design failed: %s", exc)
         return fallback

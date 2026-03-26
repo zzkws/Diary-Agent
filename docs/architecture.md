@@ -115,11 +115,12 @@ Responsibilities:
 1. User opens `Today`.
 2. Backend loads or computes a conversation plan.
 3. Planner selects a small set of topics.
-4. Question designer produces the phrasing.
-5. User responds topic by topic.
-6. Topic updates are stored incrementally.
-7. Extra note is captured.
-8. On completion:
+4. Question designer produces the opening message and later follow-ups.
+5. The frontend renders a plain chat transcript and sends user messages.
+6. The backend agent decides what topic or follow-up comes next.
+7. Topic updates are stored incrementally as the chat progresses.
+8. After enough coverage, the agent asks for any final note.
+9. On completion:
    - transcript is finalized
    - topic memories are written
    - new topics may be created
@@ -140,8 +141,9 @@ Responsibilities:
 
 ### Today
 
-- daily plan preview
-- conversation flow
+- chat transcript UI
+- single message box and send action
+- backend-driven conversation flow
 - onboarding when no topics exist
 
 ### Archive

@@ -20,29 +20,34 @@ def test_daily_conversation_flow_creates_session_updates_and_topics(client):
     assert start_response.status_code == 200
     start_payload = start_response.json()
     session_id = start_payload["session_id"]
+    assert start_payload["session_status"] == "active"
+    assert len(start_payload["transcript"]) == 1
 
     payload = start_payload
-    while payload["stage"] == "topic":
+    while payload["session_status"] == "active":
         payload = test_client.post(
             "/daily-conversation/message",
-            json={"session_id": session_id, "content": "Made some progress today"},
+            json={"session_id": session_id, "message": "Made some progress today"},
         ).json()
+        if payload["assistant_message"].startswith("Anything else from today"):
+            break
 
     payload = test_client.post(
         "/daily-conversation/message",
         json={
             "session_id": session_id,
-            "content": "Also spent time on pottery practice and planning a weekend hike.",
+            "message": "Also spent time on pottery practice and planning a weekend hike.",
         },
     ).json()
-    assert payload["stage"] == "ready_to_complete"
+    assert payload["session_status"] == "complete"
+    assert len(payload["topic_updates"]) >= 1
 
     complete_response = test_client.post("/daily-conversation/complete", json={"session_id": session_id})
     assert complete_response.status_code == 200
     complete_payload = complete_response.json()
-    assert complete_payload["status"] == "completed"
-    assert len(complete_payload["updates"]) >= 1
+    assert complete_payload["ok"] is True
     assert complete_payload["markdown_path"]
+    assert complete_payload["csv_path"]
 
     archive_response = test_client.get("/daily-sessions/2026-03-30")
     assert archive_response.status_code == 200

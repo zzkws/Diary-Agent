@@ -62,11 +62,11 @@ Topic states:
 
 The Today page:
 
-- plans a topic set for the day
-- asks about one topic at a time
-- optionally asks a light follow-up
-- asks `Anything else from today you want me to keep?`
-- stores transcript and topic updates locally
+- starts a real chat session with the Diary Agent
+- lets the backend choose what topic to ask about next
+- supports natural user messages and light follow-up questions
+- ends with `Anything else from today you want me to keep?`
+- stores the raw transcript and topic updates locally
 
 If the user is new and has no topics yet, Today provides a lightweight onboarding path that creates starter topics from the user's own focus areas.
 
@@ -118,9 +118,9 @@ Open [http://127.0.0.1:3000](http://127.0.0.1:3000)
 1. Open `Settings` and optionally configure Gemini.
 2. Open `Topics` and review or create topics.
 3. Open `Today`.
-4. Review the planned topics for the day.
-5. Start the conversation.
-6. Reply topic by topic.
+4. Start the conversation.
+5. Chat naturally with Diary.
+6. Let the backend decide the next topic or follow-up.
 7. Add anything else from the day.
 8. Save the session.
 9. Review it later in `Archive`.

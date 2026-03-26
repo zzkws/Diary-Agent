@@ -42,28 +42,23 @@ class DailyConversationStartRequest(SQLModel):
 class DailyConversationStartResponse(SQLModel):
     session_id: int
     session_date: date
-    current_topic: PlannedTopicRead | None
-    assistant_message: str | None
-    total_topics: int
-    covered_topics: int
-    stage: Literal["topic", "extra_note", "ready_to_complete"]
+    assistant_message: str
+    session_status: Literal["active", "complete"]
     transcript: list[ConversationMessageRead]
+    topic_updates: list["TopicUpdateRead"]
 
 
 class DailyConversationMessageRequest(SQLModel):
     session_id: int
-    content: str
+    message: str
 
 
 class DailyConversationMessageResponse(SQLModel):
     session_id: int
-    current_topic: PlannedTopicRead | None
-    assistant_message: str | None
-    total_topics: int
-    covered_topics: int
-    stage: Literal["topic", "extra_note", "ready_to_complete"]
-    is_ready_to_complete: bool
+    assistant_message: str
+    session_status: Literal["active", "complete"]
     transcript: list[ConversationMessageRead]
+    topic_updates: list["TopicUpdateRead"]
 
 
 class DailyConversationCompleteRequest(SQLModel):
@@ -106,3 +101,9 @@ class DailySessionSummary(SQLModel):
     extra_note: str | None
     markdown_path: str | None
     created_at: datetime
+
+
+class DailyConversationCompleteResponse(SQLModel):
+    ok: bool
+    markdown_path: str | None
+    csv_path: str

@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -29,6 +30,7 @@ from ..schemas.daily_checkin import (
 )
 from ..schemas.daily_conversation import (
     ConversationMessageRead,
+    DailyConversationCompleteResponse,
     DailyConversationCompleteRequest,
     DailyConversationMessageRequest,
     DailyConversationMessageResponse,
@@ -53,12 +55,13 @@ from ..schemas.tracked_item import TrackedItemCreate, TrackedItemRead, TrackedIt
 from ..services.checkin import PendingEntry, checkin_store
 from ..services.conversation_planner import build_daily_plan
 from ..services.exports import build_topic_csv_rows, write_conversation_markdown, write_csv_rows, write_markdown
-from ..services.gemini_client import GeminiClientError, has_valid_llm_settings, list_models, test_connection
+from ..services.gemini_client import GeminiClientError, list_models, test_connection
 from ..services.question_designer import design_follow_up_question
 from ..services.topic_extractor import build_topic_entry, should_follow_up, summarize_topic_update
 from ..services.topic_manager import apply_completed_session, create_topics_from_extra_note, sync_topics_from_tracked_items
 
 router = APIRouter()
+logger = logging.getLogger("diary.api")
 
 
 def utc_now() -> datetime:
@@ -120,24 +123,38 @@ def build_daily_session_read(daily_session: DailySession, updates: list[TopicUpd
         selected_topic_ids=parse_json(daily_session.selected_topic_ids_json, []),
         archive_candidate_ids=parse_json(daily_session.archive_candidate_ids_json, []),
         transcript=build_transcript_read(parse_json(daily_session.transcript_json, [])),
-        updates=[
-            TopicUpdateRead(
-                id=update.id,
-                topic_id=update.topic_id,
-                topic_title_snapshot=update.topic_title_snapshot,
-                question_text=update.question_text,
-                raw_answer=update.raw_answer,
-                follow_up_question=update.follow_up_question,
-                follow_up_answer=update.follow_up_answer,
-                final_text=update.final_text,
-                update_summary=update.update_summary,
-                status=update.status,
-                created_at=update.created_at,
-            )
-            for update in updates
-        ],
+        updates=build_topic_update_reads(updates),
         created_at=daily_session.created_at,
         completed_at=daily_session.completed_at,
+    )
+
+
+def build_topic_update_reads(updates: list[TopicUpdate]) -> list[TopicUpdateRead]:
+    return [
+        TopicUpdateRead(
+            id=update.id,
+            topic_id=update.topic_id,
+            topic_title_snapshot=update.topic_title_snapshot,
+            question_text=update.question_text,
+            raw_answer=update.raw_answer,
+            follow_up_question=update.follow_up_question,
+            follow_up_answer=update.follow_up_answer,
+            final_text=update.final_text,
+            update_summary=update.update_summary,
+            status=update.status,
+            created_at=update.created_at,
+        )
+        for update in updates
+    ]
+
+
+def load_session_updates(session: Session, session_id: int) -> list[TopicUpdate]:
+    return list(
+        session.exec(
+            select(TopicUpdate)
+            .where(TopicUpdate.daily_session_id == session_id)
+            .order_by(TopicUpdate.created_at)
+        )
     )
 
 
@@ -159,6 +176,28 @@ def append_message(transcript: list[dict], role: str, content: str, topic_payloa
             "topic_title": topic_payload["title"] if topic_payload else None,
         }
     )
+
+
+def session_status_from_state(state_payload: dict) -> str:
+    return "complete" if state_payload.get("stage") == "ready_to_complete" else "active"
+
+
+def user_wants_to_wrap_up(message: str) -> bool:
+    cleaned = message.strip().lower()
+    if not cleaned:
+        return False
+    signals = (
+        "that's all",
+        "thats all",
+        "nothing else",
+        "no more",
+        "done for today",
+        "all good",
+        "all set",
+        "wrap up",
+        "finish for today",
+    )
+    return any(signal in cleaned for signal in signals)
 
 
 def build_daily_conversation_csv_rows(session: Session) -> list[list[str]]:
@@ -554,6 +593,7 @@ def start_daily_conversation(
     payload: DailyConversationStartRequest,
     session: Session = Depends(get_session),
 ) -> DailyConversationStartResponse:
+    logger.info("daily_conversation.start requested for date=%s", payload.session_date or date.today())
     session_date = payload.session_date or date.today()
     llm_setting = get_agent_setting_record(session)
     planned_topics, archive_candidates, conversation_plan = build_daily_plan(session, session_date, llm_setting)
@@ -596,16 +636,15 @@ def start_daily_conversation(
     session.commit()
     session.refresh(daily_session)
     persist_transcript(session, daily_session, transcript, state_payload)
+    updates = load_session_updates(session, daily_session.id)
 
     return DailyConversationStartResponse(
         session_id=daily_session.id,
         session_date=daily_session.session_date,
-        current_topic=build_planned_topic_read(plan_payload[0]) if plan_payload else None,
         assistant_message=opening_message,
-        total_topics=len(plan_payload),
-        covered_topics=0,
-        stage=stage,
+        session_status=session_status_from_state(state_payload),
         transcript=build_transcript_read(transcript),
+        topic_updates=build_topic_update_reads(updates),
     )
 
 
@@ -614,6 +653,7 @@ def message_daily_conversation(
     payload: DailyConversationMessageRequest,
     session: Session = Depends(get_session),
 ) -> DailyConversationMessageResponse:
+    logger.info("daily_conversation.message requested for session_id=%s", payload.session_id)
     daily_session = session.get(DailySession, payload.session_id)
     if not daily_session:
         raise HTTPException(status_code=404, detail="Daily conversation session not found")
@@ -622,14 +662,17 @@ def message_daily_conversation(
     transcript = parse_json(daily_session.transcript_json, [])
     planned_topics = state_payload.get("planned_topics", [])
     stage = state_payload.get("stage", "topic")
+    user_message = payload.message.strip()
+
+    if not user_message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
     current_topic_payload = None
     if stage == "topic" and planned_topics:
         current_topic_payload = planned_topics[state_payload.get("current_index", 0)]
-    append_message(transcript, "user", payload.content.strip(), current_topic_payload)
+    append_message(transcript, "user", user_message, current_topic_payload)
 
-    assistant_message: str | None = None
-    next_topic_payload = current_topic_payload
+    assistant_message = "Thanks for sharing."
 
     if stage == "topic":
         if not current_topic_payload:
@@ -640,7 +683,7 @@ def message_daily_conversation(
 
         if state_payload.get("pending_follow_up"):
             initial_answer = state_payload.get("initial_answer", "")
-            follow_up_answer = payload.content.strip()
+            follow_up_answer = user_message
             combined_answer = f"{initial_answer.strip()} {follow_up_answer}".strip()
             status_value, stored_raw, final_text = build_topic_entry(combined_answer, topic)
             update = TopicUpdate(
@@ -661,7 +704,7 @@ def message_daily_conversation(
             state_payload["initial_answer"] = None
             state_payload["follow_up_question"] = None
         else:
-            answer_text = payload.content.strip()
+            answer_text = user_message
             if should_follow_up(answer_text):
                 follow_up_question = design_follow_up_question(topic)
                 state_payload["pending_follow_up"] = True
@@ -670,15 +713,13 @@ def message_daily_conversation(
                 assistant_message = follow_up_question
                 append_message(transcript, "assistant", follow_up_question, current_topic_payload)
                 persist_transcript(session, daily_session, transcript, state_payload)
+                updates = load_session_updates(session, daily_session.id)
                 return DailyConversationMessageResponse(
                     session_id=daily_session.id,
-                    current_topic=build_planned_topic_read(current_topic_payload),
                     assistant_message=assistant_message,
-                    total_topics=len(planned_topics),
-                    covered_topics=state_payload.get("current_index", 0),
-                    stage="topic",
-                    is_ready_to_complete=False,
+                    session_status=session_status_from_state(state_payload),
                     transcript=build_transcript_read(transcript),
+                    topic_updates=build_topic_update_reads(updates),
                 )
 
             status_value, stored_raw, final_text = build_topic_entry(answer_text, topic)
@@ -695,10 +736,16 @@ def message_daily_conversation(
             session.add(update)
             session.commit()
 
+        coverage_count = state_payload.get("current_index", 0) + 1
         next_index = state_payload.get("current_index", 0) + 1
         state_payload["current_index"] = next_index
+        enough_coverage = coverage_count >= min(max(len(planned_topics), 1), 4)
 
-        if next_index < len(planned_topics):
+        if enough_coverage and user_wants_to_wrap_up(user_message):
+            assistant_message = "Anything else from today you want me to keep before we save this session?"
+            append_message(transcript, "assistant", assistant_message, None)
+            state_payload["stage"] = "extra_note"
+        elif next_index < len(planned_topics):
             next_topic_payload = planned_topics[next_index]
             assistant_message = next_topic_payload["question"]
             append_message(transcript, "assistant", assistant_message, next_topic_payload)
@@ -707,14 +754,12 @@ def message_daily_conversation(
             assistant_message = "Anything else from today you want me to keep?"
             append_message(transcript, "assistant", assistant_message, None)
             state_payload["stage"] = "extra_note"
-            next_topic_payload = None
 
     elif stage == "extra_note":
-        daily_session.extra_note = payload.content.strip() or None
-        assistant_message = "Thanks. I can save today's conversation now."
+        daily_session.extra_note = user_message or None
+        assistant_message = "Thanks. I have enough for today, and you can save this session whenever you're ready."
         append_message(transcript, "assistant", assistant_message, None)
         state_payload["stage"] = "ready_to_complete"
-        next_topic_payload = None
 
     else:
         raise HTTPException(status_code=400, detail="This conversation is ready to complete")
@@ -723,24 +768,23 @@ def message_daily_conversation(
     session.commit()
     session.refresh(daily_session)
     persist_transcript(session, daily_session, transcript, state_payload)
+    updates = load_session_updates(session, daily_session.id)
 
     return DailyConversationMessageResponse(
         session_id=daily_session.id,
-        current_topic=build_planned_topic_read(next_topic_payload) if next_topic_payload else None,
         assistant_message=assistant_message,
-        total_topics=len(planned_topics),
-        covered_topics=min(state_payload.get("current_index", 0), len(planned_topics)),
-        stage=state_payload["stage"],
-        is_ready_to_complete=state_payload["stage"] == "ready_to_complete",
+        session_status=session_status_from_state(state_payload),
         transcript=build_transcript_read(transcript),
+        topic_updates=build_topic_update_reads(updates),
     )
 
 
-@router.post("/daily-conversation/complete", response_model=DailySessionRead)
+@router.post("/daily-conversation/complete", response_model=DailyConversationCompleteResponse)
 def complete_daily_conversation(
     payload: DailyConversationCompleteRequest,
     session: Session = Depends(get_session),
-) -> DailySessionRead:
+) -> DailyConversationCompleteResponse:
+    logger.info("daily_conversation.complete requested for session_id=%s", payload.session_id)
     daily_session = session.get(DailySession, payload.session_id)
     if not daily_session:
         raise HTTPException(status_code=404, detail="Daily conversation session not found")
@@ -749,16 +793,17 @@ def complete_daily_conversation(
     if state_payload.get("stage") != "ready_to_complete":
         raise HTTPException(status_code=400, detail="Conversation is not ready to complete")
 
-    updates = list(
-        session.exec(
-            select(TopicUpdate)
-            .where(TopicUpdate.daily_session_id == daily_session.id)
-            .order_by(TopicUpdate.created_at)
-        )
-    )
+    updates = load_session_updates(session, daily_session.id)
 
     apply_completed_session(session, daily_session, updates)
-    create_topics_from_extra_note(session, daily_session, daily_session.extra_note)
+    transcript_payload = parse_json(daily_session.transcript_json, [])
+    user_text = "\n".join(
+        message.get("content", "")
+        for message in transcript_payload
+        if message.get("role") == "user" and message.get("content")
+    )
+    candidate_text = "\n".join(part for part in [daily_session.extra_note or "", user_text] if part.strip())
+    create_topics_from_extra_note(session, daily_session, candidate_text)
 
     planned_topics = state_payload.get("planned_topics", [])
     selected_titles = [entry["title"] for entry in planned_topics]
@@ -777,7 +822,11 @@ def complete_daily_conversation(
     session.commit()
     session.refresh(daily_session)
 
-    return build_daily_session_read(daily_session, updates)
+    return DailyConversationCompleteResponse(
+        ok=True,
+        markdown_path=daily_session.markdown_path,
+        csv_path=str(settings.csv_path.resolve()),
+    )
 
 
 @router.get("/daily-sessions/{session_date}", response_model=DailySessionRead)

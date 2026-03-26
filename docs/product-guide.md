@@ -71,9 +71,9 @@ If the user has no topics yet, Diary asks for a few focus areas and turns them i
 ### Daily conversation behavior
 
 1. Diary plans 4 to 7 topics for the session.
-2. It asks one topic at a time.
+2. It opens a chat and chooses what to ask next from the backend side.
 3. It may ask one light follow-up when useful.
-4. After planned topics, it asks:
+4. After enough coverage, it asks:
    `Anything else from today you want me to keep?`
 5. It saves the full session locally.
 

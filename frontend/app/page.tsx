@@ -14,7 +14,7 @@ const cards = [
   {
     href: "/today",
     title: "Today",
-    description: "Run today's topic-based conversation and save it locally.",
+    description: "Chat with Diary today and save the transcript and topic updates locally.",
   },
   {
     href: "/archive",

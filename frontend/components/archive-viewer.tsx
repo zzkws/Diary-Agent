@@ -197,7 +197,7 @@ export function ArchiveViewer() {
                 {session.transcript.map((entry, index) => (
                   <div key={`${entry.role}-${index}`} className="rounded-2xl border border-[var(--border)] px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
-                      {entry.role} {entry.topic_title ? `• ${entry.topic_title}` : ""}
+                      {entry.role} {entry.topic_title ? `/ ${entry.topic_title}` : ""}
                     </p>
                     <p className="mt-2 text-sm leading-6">{entry.content}</p>
                   </div>

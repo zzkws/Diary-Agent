@@ -1,4 +1,5 @@
 import {
+  DailyConversationCompleteResponse,
   DailyConversationMessageResponse,
   DailyConversationPlan,
   DailyConversationStartResponse,
@@ -17,28 +18,57 @@ import {
   TrackedItemPayload,
 } from "@/lib/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const rawApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://127.0.0.1:8000";
+export const API_BASE_URL = rawApiBase.endsWith("/") ? rawApiBase.slice(0, -1) : rawApiBase;
+
+type ApiErrorPayload = {
+  detail?: string | { msg?: string }[];
+  errors?: { msg?: string }[];
+  error_type?: string;
+  status_code?: number;
+};
+
+function extractErrorMessage(payload: ApiErrorPayload, fallbackStatus: number) {
+  if (typeof payload.detail === "string" && payload.detail.trim()) {
+    return payload.detail;
+  }
+  if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+    return payload.errors.map((error) => error.msg || "Validation error").join(", ");
+  }
+  if (Array.isArray(payload.detail) && payload.detail.length > 0) {
+    return payload.detail.map((error) => error.msg || "Validation error").join(", ");
+  }
+  return `Request failed with status ${fallbackStatus}`;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Unknown network error";
+    throw new Error(
+      `Could not reach the Diary backend at ${API_BASE_URL}. Make sure the FastAPI server is running and local CORS is allowed. ${detail}`,
+    );
+  }
 
   if (!response.ok) {
     const rawDetail = await response.text();
-    let parsedDetail: string | null = null;
+    let parsedMessage: string | null = null;
     try {
-      const parsed = JSON.parse(rawDetail) as { detail?: string };
-      parsedDetail = parsed.detail ?? null;
+      const parsed = JSON.parse(rawDetail) as ApiErrorPayload;
+      parsedMessage = extractErrorMessage(parsed, response.status);
     } catch {
-      parsedDetail = null;
+      parsedMessage = null;
     }
-    throw new Error(parsedDetail || rawDetail || `Request failed with status ${response.status}`);
+    throw new Error(parsedMessage || rawDetail || `Request failed with status ${response.status}`);
   }
 
   if (response.status === 204) {
@@ -117,13 +147,13 @@ export function sendDailyConversationMessage(sessionId: number, content: string)
     method: "POST",
     body: JSON.stringify({
       session_id: sessionId,
-      content,
+      message: content,
     }),
   });
 }
 
 export function completeDailyConversation(sessionId: number) {
-  return request<DailySession>("/daily-conversation/complete", {
+  return request<DailyConversationCompleteResponse>("/daily-conversation/complete", {
     method: "POST",
     body: JSON.stringify({ session_id: sessionId }),
   });

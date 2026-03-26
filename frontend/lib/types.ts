@@ -1,6 +1,7 @@
 export type EntryStatus = "recorded" | "empty" | "skipped";
 export type TopicStatus = "active" | "dormant" | "archived";
 export type DailySessionStatus = "in_progress" | "completed";
+export type ConversationSessionStatus = "active" | "complete";
 
 export type TrackedItem = {
   id: number;
@@ -102,23 +103,24 @@ export type DailyConversationPlan = {
 export type DailyConversationStartResponse = {
   session_id: number;
   session_date: string;
-  current_topic: PlannedTopic | null;
-  assistant_message: string | null;
-  total_topics: number;
-  covered_topics: number;
-  stage: "topic" | "extra_note" | "ready_to_complete";
+  assistant_message: string;
+  session_status: ConversationSessionStatus;
   transcript: ConversationMessage[];
+  topic_updates: TopicUpdate[];
 };
 
 export type DailyConversationMessageResponse = {
   session_id: number;
-  current_topic: PlannedTopic | null;
-  assistant_message: string | null;
-  total_topics: number;
-  covered_topics: number;
-  stage: "topic" | "extra_note" | "ready_to_complete";
-  is_ready_to_complete: boolean;
+  assistant_message: string;
+  session_status: ConversationSessionStatus;
   transcript: ConversationMessage[];
+  topic_updates: TopicUpdate[];
+};
+
+export type DailyConversationCompleteResponse = {
+  ok: boolean;
+  markdown_path: string | null;
+  csv_path: string;
 };
 
 export type TopicUpdate = {
