@@ -6,7 +6,7 @@ import { Nav } from "@/components/nav";
 
 export const metadata: Metadata = {
   title: "Diary",
-  description: "A local-first journaling app that asks, records, and saves.",
+  description: "A local-first diary app that keeps track of ongoing topics over time.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -20,8 +20,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <p className="text-sm uppercase tracking-[0.24em] text-[var(--muted)]">Local-first diary</p>
                 <h1 className="mt-2 text-4xl font-semibold tracking-tight">Diary</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--muted)]">
-                  The app asks your fixed daily questions, records the answers, and saves everything on your own
-                  computer.
+                  The app keeps track of ongoing topics, asks about a small planned set each day, and saves everything
+                  on your own computer.
                 </p>
               </div>
               <Nav />

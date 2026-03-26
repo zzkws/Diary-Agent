@@ -1,9 +1,18 @@
 import {
-  DailyCheckInAnswerResponse,
-  DailyCheckInStartResponse,
+  DailyConversationMessageResponse,
+  DailyConversationPlan,
+  DailyConversationStartResponse,
   DailyLog,
   DailyLogSummary,
+  DailySession,
+  DailySessionSummary,
   ExportMeta,
+  GeminiModel,
+  LlmSettings,
+  LlmSettingsPayload,
+  LlmTestResponse,
+  Topic,
+  TopicPayload,
   TrackedItem,
   TrackedItemPayload,
 } from "@/lib/types";
@@ -63,32 +72,69 @@ export function deleteTrackedItem(id: number) {
   });
 }
 
-export function startCheckIn(logDate?: string) {
-  return request<DailyCheckInStartResponse>("/daily-checkin/start", {
+export function listTopics(status?: string) {
+  const suffix = status ? `?status=${status}` : "";
+  return request<Topic[]>(`/topics${suffix}`);
+}
+
+export function createTopic(payload: TopicPayload) {
+  return request<Topic>("/topics", {
     method: "POST",
-    body: JSON.stringify(logDate ? { log_date: logDate } : {}),
+    body: JSON.stringify(payload),
   });
 }
 
-export function answerCheckIn(sessionId: string, trackedItemId: number, answer: string) {
-  return request<DailyCheckInAnswerResponse>("/daily-checkin/answer", {
+export function createOnboardingTopics(focusAreas: string[]) {
+  return request<Topic[]>("/topics/onboarding", {
+    method: "POST",
+    body: JSON.stringify({ focus_areas: focusAreas }),
+  });
+}
+
+export function updateTopic(id: number, payload: Partial<TopicPayload>) {
+  return request<Topic>(`/topics/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function planDailyConversation(sessionDate?: string) {
+  return request<DailyConversationPlan>("/daily-conversation/plan", {
+    method: "POST",
+    body: JSON.stringify(sessionDate ? { session_date: sessionDate } : {}),
+  });
+}
+
+export function startDailyConversation(sessionDate?: string) {
+  return request<DailyConversationStartResponse>("/daily-conversation/start", {
+    method: "POST",
+    body: JSON.stringify(sessionDate ? { session_date: sessionDate } : {}),
+  });
+}
+
+export function sendDailyConversationMessage(sessionId: number, content: string) {
+  return request<DailyConversationMessageResponse>("/daily-conversation/message", {
     method: "POST",
     body: JSON.stringify({
       session_id: sessionId,
-      tracked_item_id: trackedItemId,
-      answer,
+      content,
     }),
   });
 }
 
-export function completeCheckIn(sessionId: string, extraNote: string) {
-  return request<DailyLog>("/daily-checkin/complete", {
+export function completeDailyConversation(sessionId: number) {
+  return request<DailySession>("/daily-conversation/complete", {
     method: "POST",
-    body: JSON.stringify({
-      session_id: sessionId,
-      extra_note: extraNote,
-    }),
+    body: JSON.stringify({ session_id: sessionId }),
   });
+}
+
+export function getDailySession(sessionDate: string) {
+  return request<DailySession>(`/daily-sessions/${sessionDate}`);
+}
+
+export function listDailySessions(limit = 30) {
+  return request<DailySessionSummary[]>(`/daily-sessions?limit=${limit}`);
 }
 
 export function getDailyLog(logDate: string) {
@@ -101,4 +147,29 @@ export function listDailyLogs(limit = 30) {
 
 export function getExportMeta() {
   return request<ExportMeta>("/exports/meta");
+}
+
+export function getLlmSettings() {
+  return request<LlmSettings>("/settings/llm");
+}
+
+export function saveLlmSettings(payload: LlmSettingsPayload) {
+  return request<LlmSettings>("/settings/llm", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listGeminiModels() {
+  return request<GeminiModel[]>("/settings/llm/models");
+}
+
+export function testLlmSettings(apiKey?: string | null, modelName?: string | null) {
+  return request<LlmTestResponse>("/settings/llm/test", {
+    method: "POST",
+    body: JSON.stringify({
+      api_key: apiKey ?? null,
+      model_name: modelName ?? null,
+    }),
+  });
 }

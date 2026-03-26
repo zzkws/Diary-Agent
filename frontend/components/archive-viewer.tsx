@@ -1,27 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ExportFolderActions } from "@/components/export-folder-actions";
-import { getDailyLog, listDailyLogs } from "@/lib/api";
+import { getDailySession, listDailySessions, listTopics } from "@/lib/api";
 import { getLocalDateString } from "@/lib/date";
-import { DailyLog, DailyLogSummary } from "@/lib/types";
+import { DailySession, DailySessionSummary, Topic } from "@/lib/types";
 
 export function ArchiveViewer() {
   const today = getLocalDateString();
   const [selectedDate, setSelectedDate] = useState(today);
-  const [dailyLog, setDailyLog] = useState<DailyLog | null>(null);
-  const [summaries, setSummaries] = useState<DailyLogSummary[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [summaries, setSummaries] = useState<DailySessionSummary[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [session, setSession] = useState<DailySession | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadSummaries() {
+  async function loadArchiveSummary() {
     try {
       setSummaryLoading(true);
-      setSummaries(await listDailyLogs());
+      setError(null);
+      const [sessionSummaries, topicList] = await Promise.all([listDailySessions(), listTopics()]);
+      setSummaries(sessionSummaries);
+      setTopics(topicList);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load archive list.");
+      setError(loadError instanceof Error ? loadError.message : "Unable to load archive.");
     } finally {
       setSummaryLoading(false);
     }
@@ -32,25 +36,32 @@ export function ArchiveViewer() {
       setLoading(true);
       setError(null);
       setSelectedDate(targetDate);
-      setDailyLog(await getDailyLog(targetDate));
+      setSession(await getDailySession(targetDate));
     } catch (loadError) {
-      setDailyLog(null);
-      setError(loadError instanceof Error ? loadError.message : "Unable to load daily log.");
+      setSession(null);
+      setError(loadError instanceof Error ? loadError.message : "Unable to load that conversation session.");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    void loadSummaries();
+    void loadArchiveSummary();
   }, []);
 
+  const topicMap = useMemo(
+    () => new Map<number, Topic>(topics.map((topic) => [topic.id, topic])),
+    [topics],
+  );
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.78fr_1.22fr]">
+    <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
       <aside className="grid gap-4 xl:sticky xl:top-6 xl:self-start">
         <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
-          <h2 className="text-xl font-semibold">Daily archive</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">Open a saved day or browse recent records below.</p>
+          <h2 className="text-xl font-semibold">Conversation archive</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            Open a saved day to review selected topics, question-and-answer turns, and extracted updates.
+          </p>
           <label className="mt-5 grid gap-2">
             <span className="text-sm font-medium">Date</span>
             <input
@@ -80,12 +91,12 @@ export function ArchiveViewer() {
         <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold">Recent days</h3>
-              <p className="mt-1 text-sm text-[var(--muted)]">Each card is one saved day.</p>
+              <h3 className="text-lg font-semibold">Recent sessions</h3>
+              <p className="mt-1 text-sm text-[var(--muted)]">One session per saved day.</p>
             </div>
             <button
               type="button"
-              onClick={() => void loadSummaries()}
+              onClick={() => void loadArchiveSummary()}
               className="rounded-full border border-[var(--border)] px-4 py-2 text-sm"
             >
               Refresh
@@ -94,29 +105,27 @@ export function ArchiveViewer() {
           <div className="mt-4 grid gap-3">
             {summaryLoading ? (
               <div className="rounded-2xl border border-dashed border-[var(--border)] px-4 py-8 text-sm text-[var(--muted)]">
-                Loading recent days...
+                Loading recent sessions...
               </div>
             ) : null}
             {!summaryLoading && summaries.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-[var(--border)] px-4 py-8 text-sm text-[var(--muted)]">
-                No saved days yet. Complete a daily check-in to populate the archive.
+                No saved conversation sessions yet.
               </div>
             ) : null}
             {summaries.map((summary) => (
               <button
                 key={summary.id}
                 type="button"
-                onClick={() => void handleLoad(summary.log_date)}
+                onClick={() => void handleLoad(summary.session_date)}
                 className="rounded-2xl border border-[var(--border)] bg-white px-4 py-4 text-left transition hover:border-[var(--accent)]"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <span className="font-medium">{summary.log_date}</span>
-                  <span className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
-                    {summary.entry_count} items
-                  </span>
+                  <span className="font-medium">{summary.session_date}</span>
+                  <span className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">{summary.status}</span>
                 </div>
                 <p className="mt-2 text-sm text-[var(--muted)]">
-                  {summary.extra_note ? "Includes an extra note." : "Fixed items only."}
+                  {summary.selected_topic_ids.length} planned topic{summary.selected_topic_ids.length === 1 ? "" : "s"}
                 </p>
               </button>
             ))}
@@ -125,35 +134,72 @@ export function ArchiveViewer() {
       </aside>
 
       <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
-        {!dailyLog ? (
+        {!session ? (
           <div className="rounded-3xl border border-dashed border-[var(--border)] px-5 py-12 text-sm text-[var(--muted)]">
-            No day loaded. Select a date or open one of the recent saved days.
+            No conversation session loaded yet.
           </div>
         ) : null}
 
-        {dailyLog ? (
+        {session ? (
           <div className="grid gap-5">
             <div className="rounded-3xl border border-[var(--border)] bg-white p-5">
-              <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">Loaded day</p>
-              <h2 className="mt-2 text-2xl font-semibold">{dailyLog.log_date}</h2>
+              <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">Saved day</p>
+              <h2 className="mt-2 text-2xl font-semibold">{session.session_date}</h2>
               <p className="mt-2 break-all text-sm text-[var(--muted)]">
-                Markdown file: {dailyLog.markdown_path ?? "Not available"}
+                Markdown file: {session.markdown_path ?? "Not available"}
               </p>
             </div>
 
             <div className="rounded-3xl border border-[var(--border)] bg-white p-5">
-              <h3 className="text-lg font-semibold">Fixed items</h3>
+              <h3 className="text-lg font-semibold">Selected topics</h3>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {session.selected_topic_ids.length === 0 ? (
+                  <p className="text-sm text-[var(--muted)]">No planned topics were stored for this day.</p>
+                ) : (
+                  session.selected_topic_ids.map((topicId) => (
+                    <span key={topicId} className="rounded-full border border-[var(--border)] px-3 py-2 text-sm">
+                      {topicMap.get(topicId)?.title ?? `Topic ${topicId}`}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-[var(--border)] bg-white p-5">
+              <h3 className="text-lg font-semibold">Extracted topic updates</h3>
               <div className="mt-4 grid gap-3">
-                {dailyLog.entries.map((entry) => (
-                  <div key={entry.id} className="rounded-2xl border border-[var(--border)] px-4 py-3">
+                {session.updates.map((update) => (
+                  <div key={update.id} className="rounded-2xl border border-[var(--border)] px-4 py-3">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <span className="font-medium">{entry.item_name}</span>
-                      <span className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">{entry.status}</span>
+                      <span className="font-medium">{update.topic_title_snapshot}</span>
+                      <span className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">{update.status}</span>
                     </div>
-                    {entry.raw_answer ? (
-                      <p className="mt-2 text-sm text-[var(--muted)]">Raw answer: {entry.raw_answer}</p>
+                    <p className="mt-2 text-sm text-[var(--muted)]">Question: {update.question_text}</p>
+                    {update.raw_answer ? (
+                      <p className="mt-2 text-sm text-[var(--muted)]">Answer: {update.raw_answer}</p>
                     ) : null}
-                    <p className="mt-2 text-sm leading-6">{entry.final_text}</p>
+                    {update.follow_up_question ? (
+                      <p className="mt-2 text-sm text-[var(--muted)]">Follow-up: {update.follow_up_question}</p>
+                    ) : null}
+                    {update.follow_up_answer ? (
+                      <p className="mt-2 text-sm text-[var(--muted)]">Follow-up answer: {update.follow_up_answer}</p>
+                    ) : null}
+                    <p className="mt-2 text-sm">Saved update: {update.final_text}</p>
+                    <p className="mt-2 text-sm text-[var(--muted)]">Extracted update: {update.update_summary}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-[var(--border)] bg-white p-5">
+              <h3 className="text-lg font-semibold">Transcript</h3>
+              <div className="mt-4 grid gap-3">
+                {session.transcript.map((entry, index) => (
+                  <div key={`${entry.role}-${index}`} className="rounded-2xl border border-[var(--border)] px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">
+                      {entry.role} {entry.topic_title ? `• ${entry.topic_title}` : ""}
+                    </p>
+                    <p className="mt-2 text-sm leading-6">{entry.content}</p>
                   </div>
                 ))}
               </div>
@@ -161,7 +207,7 @@ export function ArchiveViewer() {
 
             <div className="rounded-3xl border border-[var(--border)] bg-white p-5">
               <h3 className="text-lg font-semibold">Extra note</h3>
-              <p className="mt-3 text-sm leading-6 text-[var(--muted)]">{dailyLog.extra_note || "-"}</p>
+              <p className="mt-3 text-sm leading-6 text-[var(--muted)]">{session.extra_note || "-"}</p>
             </div>
           </div>
         ) : null}

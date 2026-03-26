@@ -3,24 +3,29 @@ import Link from "next/link";
 const cards = [
   {
     href: "/settings",
-    title: "Tracked Items",
-    description: "Define the fixed questions Diary should ask every day.",
+    title: "Settings",
+    description: "Save your Gemini API key and model locally for the Diary Agent.",
   },
   {
-    href: "/check-in",
-    title: "Daily Check-in",
-    description: "Run today's question sequence and save the results locally.",
+    href: "/topics",
+    title: "Topics",
+    description: "Manage the ongoing topics Diary keeps in rotation over time.",
+  },
+  {
+    href: "/today",
+    title: "Today",
+    description: "Run today's topic-based conversation and save it locally.",
   },
   {
     href: "/archive",
     title: "Daily Archive",
-    description: "Open a saved day and view what was recorded.",
+    description: "Open a saved day and review topics, transcript, and extracted updates.",
   },
 ];
 
 export default function HomePage() {
   return (
-    <div className="grid gap-6 md:grid-cols-3">
+    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
       {cards.map((card) => (
         <Link
           key={card.href}

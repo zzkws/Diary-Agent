@@ -8,7 +8,7 @@ from sqlmodel import Session
 from .api.routes import router
 from .core.config import settings
 from .core.db import create_db_and_tables, engine
-from .services.seed import seed_default_tracked_items
+from .services.topic_manager import sync_topics_from_tracked_items
 
 scheduler = BackgroundScheduler(timezone=settings.resolved_scheduler_timezone)
 
@@ -17,7 +17,7 @@ scheduler = BackgroundScheduler(timezone=settings.resolved_scheduler_timezone)
 async def lifespan(_: FastAPI):
     create_db_and_tables()
     with Session(engine) as session:
-        seed_default_tracked_items(session)
+        sync_topics_from_tracked_items(session)
     if not scheduler.running:
         scheduler.start()
     yield

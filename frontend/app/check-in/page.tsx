@@ -1,5 +1,5 @@
-import { DailyCheckInFlow } from "@/components/daily-checkin";
+import { redirect } from "next/navigation";
 
-export default function CheckInPage() {
-  return <DailyCheckInFlow />;
+export default function LegacyCheckInPage() {
+  redirect("/today");
 }
